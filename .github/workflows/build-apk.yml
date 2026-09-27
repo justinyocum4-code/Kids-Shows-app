@@ -154,7 +154,7 @@ jobs:
               public void fetchPlaylist(final String url) {
                 new Thread(new Runnable() {
                   @Override public void run() {
-                    String js;
+                    String jsTmp;
                     try {
                       java.net.URL u = new java.net.URL(url);
                       java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
@@ -168,14 +168,15 @@ jobs:
                       while ((n = in.read(tmp)) != -1) bos.write(tmp, 0, n);
                       in.close();
                       String b64 = android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP);
-                      js = "onPlaylistLoaded('" + b64 + "')";
+                      jsTmp = "onPlaylistLoaded('" + b64 + "')";
                     } catch (Exception e) {
                       String msg = e.getMessage();
                       if (msg == null) msg = "load failed";
                       msg = msg.replace("'", "").replace("\n", " ");
                       if (msg.length() > 120) msg = msg.substring(0, 120);
-                      js = "onPlaylistError('" + msg + "')";
+                      jsTmp = "onPlaylistError('" + msg + "')";
                     }
+                    final String js = jsTmp;
                     w.post(new Runnable() {
                       @Override public void run() { w.evaluateJavascript(js, null); }
                     });
