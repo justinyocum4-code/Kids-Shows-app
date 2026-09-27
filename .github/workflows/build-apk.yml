@@ -25,9 +25,9 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     env:
-      APP_VERSION_NAME: ${{ inputs.version_name || '4.4' }}
-      APP_VERSION_CODE: ${{ inputs.version_code || '8' }}
-      APP_RELEASE_NOTES: "${{ inputs.release_notes || 'Fresh live stream addresses: PAW Patrol and Super Simple Songs restarted their 24/7 streams, and Masha and the Bear takes the CoComelon slot since CoComelon is not live right now.' }}"
+      APP_VERSION_NAME: ${{ inputs.version_name || '4.5' }}
+      APP_VERSION_CODE: ${{ inputs.version_code || '9' }}
+      APP_RELEASE_NOTES: "${{ inputs.release_notes || 'Fresh Peppa Pig live stream address: their 24/7 stream restarted under a new address.' }}"
     steps:
       - name: Check out code
         uses: actions/checkout@v4
