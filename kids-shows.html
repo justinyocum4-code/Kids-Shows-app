@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kids Shows</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#000; color:#FFD700; font-family: Arial, Helvetica, sans-serif; font-size:20px; }
+  header { background:#111; border-bottom:3px solid #FFD700; padding:14px; text-align:center; position:sticky; top:0; z-index:5; }
+  header h1 { margin:0; font-size:30px; color:#FFD700; }
+  header p { margin:6px 0 0; font-size:16px; color:#ccc; }
+  .tabs { display:flex; gap:10px; padding:12px; background:#000; position:sticky; top:0; z-index:4; }
+  .tab { flex:1; background:#111; color:#FFD700; border:3px solid #FFD700; border-radius:14px; padding:16px 8px; font-size:22px; font-weight:bold; cursor:pointer; }
+  .tab[aria-selected="true"] { background:#FFD700; color:#000; }
+  .tab:focus, button:focus { outline:4px solid #fff; outline-offset:2px; }
+  main { padding:12px; padding-bottom:60px; }
+  .showbtn { display:block; width:100%; text-align:left; background:#111; color:#FFD700; border:3px solid #FFD700; border-radius:14px; padding:16px; margin:0 0 12px; font-size:21px; font-weight:bold; cursor:pointer; }
+  .showbtn .meta { display:block; font-size:16px; font-weight:normal; color:#ccc; margin-top:6px; }
+  .livebadge { display:inline-block; background:#c00; color:#fff; font-size:15px; font-weight:bold; border-radius:8px; padding:3px 10px; margin-right:8px; }
+  .tips { background:#111; border:2px solid #FFD700; border-radius:14px; padding:14px; margin:18px 0 0; font-size:17px; color:#eee; }
+  .tips h2 { color:#FFD700; font-size:20px; margin:0 0 8px; }
+  .tips li { margin-bottom:8px; }
+  #player { display:none; position:fixed; inset:0; background:#000; z-index:50; flex-direction:column; }
+  #player.open { display:flex; }
+  #playerbar { display:flex; align-items:center; gap:12px; padding:12px; background:#111; border-bottom:3px solid #FFD700; }
+  #backbtn { background:#FFD700; color:#000; border:none; border-radius:12px; padding:14px 22px; font-size:22px; font-weight:bold; cursor:pointer; }
+  #playertitle { flex:1; font-size:20px; color:#FFD700; font-weight:bold; }
+  #stage { flex:1; display:flex; align-items:center; justify-content:center; background:#000; }
+  #stage video, #stage iframe { width:100%; height:100%; border:none; background:#000; }
+  #announcer { position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden; }
+</style>
+</head>
+<body id="kids-shows-app">
+<div id="announcer" aria-live="polite"></div>
+<header>
+  <h1>Kids Shows</h1>
+  <p>Tap a show. It plays right here in the app.</p>
+</header>
+<nav class="tabs" role="tablist" aria-label="Show categories">
+  <button class="tab" role="tab" id="tab-cartoons" aria-selected="true" aria-controls="panel-cartoons" onclick="showTab('cartoons')">Cartoons</button>
+  <button class="tab" role="tab" id="tab-live" aria-selected="false" aria-controls="panel-live" onclick="showTab('live')">24/7 Live</button>
+</nav>
+<main>
+  <section id="panel-cartoons" role="tabpanel" aria-labelledby="tab-cartoons"></section>
+  <section id="panel-live" role="tabpanel" aria-labelledby="tab-live" hidden></section>
+  <div class="tips">
+    <h2>Good to know</h2>
+    <ul>
+      <li>Every video plays inside this app. Nothing opens a web page or browser.</li>
+      <li>The 24/7 Live tab has only real, always-on live streams from official channels. If one ever says unavailable, pick another show.</li>
+      <li>You need an internet connection to stream.</li>
+      <li>Use your remote's arrow keys and OK button, or tap, to choose.</li>
+    </ul>
+  </div>
+</main>
+<div id="player" role="dialog" aria-modal="true" aria-label="Video player">
+  <div id="playerbar">
+    <button id="backbtn" onclick="closePlayer()">Back</button>
+    <div id="playertitle"></div>
+  </div>
+  <div id="stage"></div>
+</div>
+<script>
+"use strict";
+/* Kids Shows v4.0. Everything plays in-app. No external web links.
+   24/7 Live tab contains only verified, always-on YouTube live streams
+   from official channels. */
+var CARTOONS = [
+  { title: "Betty Boop: Snow White (1933)", desc: "Classic cartoon", src: "https://ia800300.us.archive.org/9/items/betty_boop_snow_white/betty_boop_snow_white_512kb.mp4" },
+  { title: "Popeye Meets Sinbad the Sailor (1936)", desc: "Classic cartoon", src: "https://ia800300.us.archive.org/17/items/popeye_meets_sinbad_the_sailor/popeye_meets_sinbad_the_sailor_512kb.mp4" },
+  { title: "Popeye Meets Ali Baba's Forty Thieves (1937)", desc: "Classic cartoon", src: "https://ia800300.us.archive.org/26/items/popeye_meets_ali_babas_forty_thieves/popeye_meets_ali_babas_forty_thieves_512kb.mp4" },
+  { title: "Superman: The Mechanical Monsters (1941)", desc: "Classic cartoon", src: "https://ia800300.us.archive.org/18/items/superman_the_mechanical_monsters/superman_the_mechanical_monsters_512kb.mp4" },
+  { title: "Flip the Frog: Fiddlesticks (1930)", desc: "Classic cartoon", src: "https://ia800300.us.archive.org/6/items/fiddlesticks/flip_the_frog-fiddlesticks_512kb.mp4" }
+];
+var LIVESTREAMS = [
+  { title: "PAW Patrol: To The Rescue! Non-stop full episodes", show: "PAW Patrol", id: "DiqY1qBqyF4" },
+  { title: "Peppa Pig newest episodes, back to back", show: "Peppa Pig", id: "uw-CZXyAjq4" },
+  { title: "CoComelon Animal Time 24/7 nursery rhymes", show: "CoComelon", id: "I7DHJ4Cl5qg" },
+  { title: "Bebefinn, Minjee and Baby Shark 24/7", show: "Bebefinn", id: "CQc2ZNABjZM" },
+  { title: "Super Simple Songs live kids songs", show: "Super Simple Songs", id: "JgHkNhWJ12Q" }
+];
+var currentTab = "cartoons";
+function announce(msg) {
+  document.getElementById("announcer").textContent = msg;
+}
+function badgeHtml() {
+  return '<span class="livebadge">LIVE</span>';
+}
+function renderCartoons() {
+  var panel = document.getElementById("panel-cartoons");
+  var html = "";
+  for (var i = 0; i < CARTOONS.length; i++) {
+    html += '<button class="showbtn" onclick="openCartoon(' + i + ')" aria-label="Play ' + CARTOONS[i].title + '">' +
+      CARTOONS[i].title + '<span class="meta">' + CARTOONS[i].desc + '</span></button>';
+  }
+  panel.innerHTML = html;
+}
+function renderLive() {
+  var panel = document.getElementById("panel-live");
+  var html = "";
+  for (var i = 0; i < LIVESTREAMS.length; i++) {
+    var item = LIVESTREAMS[i];
+    html += '<button class="showbtn" onclick="openLive(' + i + ')" aria-label="Play ' + item.title + ', live 24-7 stream">' +
+      badgeHtml() + item.title + '<span class="meta">' + item.show + ' - live on YouTube</span></button>';
+  }
+  panel.innerHTML = html;
+}
+function showTab(name) {
+  currentTab = name;
+  document.getElementById("tab-cartoons").setAttribute("aria-selected", name === "cartoons" ? "true" : "false");
+  document.getElementById("tab-live").setAttribute("aria-selected", name === "live" ? "true" : "false");
+  document.getElementById("panel-cartoons").hidden = name !== "cartoons";
+  document.getElementById("panel-live").hidden = name !== "live";
+  announce(name === "cartoons" ? "Cartoons tab" : "24-7 live tab");
+}
+function openPlayer(title) {
+  document.getElementById("playertitle").textContent = title;
+  document.getElementById("player").classList.add("open");
+  document.getElementById("backbtn").focus();
+  announce("Now playing: " + title + ". Press Back to return to the list.");
+}
+function openCartoon(i) {
+  if (i < 0 || i >= CARTOONS.length) { return; }
+  var item = CARTOONS[i];
+  document.getElementById("stage").innerHTML =
+    '<video controls autoplay playsinline src="' + item.src + '"></video>';
+  openPlayer(item.title);
+}
+function openLive(i) {
+  if (i < 0 || i >= LIVESTREAMS.length) { return; }
+  var item = LIVESTREAMS[i];
+  document.getElementById("stage").innerHTML =
+    '<iframe src="https://www.youtube-nocookie.com/embed/' + item.id + '?autoplay=1&rel=0&playsinline=1" ' +
+    'allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen title="' + item.title + '"></iframe>';
+  openPlayer(item.title);
+}
+function closePlayer() {
+  document.getElementById("stage").innerHTML = "";
+  document.getElementById("player").classList.remove("open");
+  announce("Player closed.");
+}
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" || e.key === "Backspace") { closePlayer(); }
+});
+renderCartoons();
+renderLive();
+</script>
+</body>
+</html>
