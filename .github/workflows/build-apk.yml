@@ -25,9 +25,9 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     env:
-      APP_VERSION_NAME: ${{ inputs.version_name || '4.5' }}
-      APP_VERSION_CODE: ${{ inputs.version_code || '9' }}
-      APP_RELEASE_NOTES: "${{ inputs.release_notes || 'Fresh Peppa Pig live stream address: their 24/7 stream restarted under a new address.' }}"
+      APP_VERSION_NAME: ${{ inputs.version_name || '4.6' }}
+      APP_VERSION_CODE: ${{ inputs.version_code || '10' }}
+      APP_RELEASE_NOTES: "${{ inputs.release_notes || 'Two new 24/7 streams: BabyBus and Disney Jr. (The Lion Guard). All seven live streams verified working.' }}"
     steps:
       - name: Check out code
         uses: actions/checkout@v4
