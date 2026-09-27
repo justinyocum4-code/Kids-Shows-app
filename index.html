@@ -13,14 +13,17 @@
   .tabs { display:flex; gap:10px; padding:12px; background:#000; position:sticky; top:0; z-index:4; }
   .tab { flex:1; background:#111; color:#FFD700; border:3px solid #FFD700; border-radius:14px; padding:16px 8px; font-size:22px; font-weight:bold; cursor:pointer; }
   .tab[aria-selected="true"] { background:#FFD700; color:#000; }
-  .tab:focus, button:focus { outline:4px solid #fff; outline-offset:2px; }
+  .tab:focus, button:focus, input:focus { outline:4px solid #fff; outline-offset:2px; }
   main { padding:12px; padding-bottom:60px; }
   .showbtn { display:block; width:100%; text-align:left; background:#111; color:#FFD700; border:3px solid #FFD700; border-radius:14px; padding:16px; margin:0 0 12px; font-size:21px; font-weight:bold; cursor:pointer; }
   .showbtn .meta { display:block; font-size:16px; font-weight:normal; color:#ccc; margin-top:6px; }
   .livebadge { display:inline-block; background:#c00; color:#fff; font-size:15px; font-weight:bold; border-radius:8px; padding:3px 10px; margin-right:8px; }
+  .sectionhead { color:#FFD700; font-size:24px; margin:22px 0 10px; border-bottom:2px solid #FFD700; padding-bottom:6px; }
   .tips { background:#111; border:2px solid #FFD700; border-radius:14px; padding:14px; margin:18px 0 0; font-size:17px; color:#eee; }
   .tips h2 { color:#FFD700; font-size:20px; margin:0 0 8px; }
   .tips li { margin-bottom:8px; }
+  #playlisturl { display:block; width:100%; background:#111; color:#fff; border:3px solid #FFD700; border-radius:14px; padding:16px; margin:0 0 12px; font-size:20px; }
+  #playliststatus { font-size:18px; color:#ccc; margin:6px 0 12px; min-height:24px; }
   #player { display:none; position:fixed; inset:0; background:#000; z-index:50; flex-direction:column; }
   #player.open { display:flex; }
   #playerbar { display:flex; align-items:center; gap:12px; padding:12px; background:#111; border-bottom:3px solid #FFD700; }
@@ -40,15 +43,24 @@
 <nav class="tabs" role="tablist" aria-label="Show categories">
   <button class="tab" role="tab" id="tab-cartoons" aria-selected="true" aria-controls="panel-cartoons" onclick="showTab('cartoons')">Cartoons</button>
   <button class="tab" role="tab" id="tab-live" aria-selected="false" aria-controls="panel-live" onclick="showTab('live')">24/7 Live</button>
+  <button class="tab" role="tab" id="tab-playlist" aria-selected="false" aria-controls="panel-playlist" onclick="showTab('playlist')">Playlist</button>
 </nav>
 <main>
   <section id="panel-cartoons" role="tabpanel" aria-labelledby="tab-cartoons"></section>
   <section id="panel-live" role="tabpanel" aria-labelledby="tab-live" hidden></section>
+  <section id="panel-playlist" role="tabpanel" aria-labelledby="tab-playlist" hidden>
+    <p style="font-size:18px;color:#eee;">Paste your own m3u playlist link below, then tap Load playlist. The app sorts the channels into sections.</p>
+    <input id="playlisturl" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Playlist link" placeholder="https://example.com/playlist.m3u">
+    <button class="showbtn" onclick="loadPlaylist()">Load playlist</button>
+    <div id="playliststatus" role="status"></div>
+    <div id="playlistsections"></div>
+  </section>
   <div class="tips">
     <h2>Good to know</h2>
     <ul>
       <li>Every video plays inside this app. Nothing opens a web page or browser.</li>
       <li>The 24/7 Live tab has only real, always-on live streams from official channels. If one ever says unavailable, pick another show.</li>
+      <li>The Playlist tab plays channels from any m3u playlist link you paste in. Those come from the playlist's own source, not from us.</li>
       <li>You need an internet connection to stream.</li>
       <li>Use your remote's arrow keys and OK button, or tap, to choose.</li>
     </ul>
@@ -63,9 +75,10 @@
 </div>
 <script>
 "use strict";
-/* Kids Shows v4.6. Everything plays in-app. No external web links.
+/* Kids Shows v4.7. Everything plays in-app. No external web links.
    24/7 Live tab contains only verified, always-on YouTube live streams
-   from official channels. */
+   from official channels. The Playlist tab loads a user-supplied m3u
+   playlist and plays its channels through the native player. */
 var CARTOONS = [
   { title: "Betty Boop: Snow White (1933)", desc: "Classic cartoon", src: "https://ia800300.us.archive.org/9/items/betty_boop_snow_white/betty_boop_snow_white_512kb.mp4" },
   { title: "Popeye Meets Sinbad the Sailor (1936)", desc: "Classic cartoon", src: "https://ia800300.us.archive.org/17/items/popeye_meets_sinbad_the_sailor/popeye_meets_sinbad_the_sailor_512kb.mp4" },
@@ -82,9 +95,15 @@ var LIVESTREAMS = [
   { title: "BabyBus preschool songs and learning cartoons live", show: "BabyBus", id: "p5H3XG4aE5A" },
   { title: "Disney Jr. The Lion Guard Season 1 full episodes live", show: "Disney Jr.", id: "OLm79RPFDaQ" }
 ];
+var PLAYLIST_KEY = "kidsshows_playlist_url";
+var playlistChannels = [];
+var playlistTimer = null;
 var currentTab = "cartoons";
 function announce(msg) {
   document.getElementById("announcer").textContent = msg;
+}
+function escHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function badgeHtml() {
   return '<span class="livebadge">LIVE</span>';
@@ -93,8 +112,8 @@ function renderCartoons() {
   var panel = document.getElementById("panel-cartoons");
   var html = "";
   for (var i = 0; i < CARTOONS.length; i++) {
-    html += '<button class="showbtn" onclick="openCartoon(' + i + ')" aria-label="Play ' + CARTOONS[i].title + '">' +
-      CARTOONS[i].title + '<span class="meta">' + CARTOONS[i].desc + '</span></button>';
+    html += '<button class="showbtn" onclick="openCartoon(' + i + ')" aria-label="Play ' + escHtml(CARTOONS[i].title) + '">' +
+      escHtml(CARTOONS[i].title) + '<span class="meta">' + escHtml(CARTOONS[i].desc) + '</span></button>';
   }
   panel.innerHTML = html;
 }
@@ -103,18 +122,20 @@ function renderLive() {
   var html = "";
   for (var i = 0; i < LIVESTREAMS.length; i++) {
     var item = LIVESTREAMS[i];
-    html += '<button class="showbtn" onclick="openLive(' + i + ')" aria-label="Play ' + item.title + ', live 24-7 stream">' +
-      badgeHtml() + item.title + '<span class="meta">' + item.show + ' - live on YouTube</span></button>';
+    html += '<button class="showbtn" onclick="openLive(' + i + ')" aria-label="Play ' + escHtml(item.title) + ', live 24-7 stream">' +
+      badgeHtml() + escHtml(item.title) + '<span class="meta">' + escHtml(item.show) + ' - live on YouTube</span></button>';
   }
   panel.innerHTML = html;
 }
 function showTab(name) {
   currentTab = name;
-  document.getElementById("tab-cartoons").setAttribute("aria-selected", name === "cartoons" ? "true" : "false");
-  document.getElementById("tab-live").setAttribute("aria-selected", name === "live" ? "true" : "false");
-  document.getElementById("panel-cartoons").hidden = name !== "cartoons";
-  document.getElementById("panel-live").hidden = name !== "live";
-  announce(name === "cartoons" ? "Cartoons tab" : "24-7 live tab");
+  var tabs = ["cartoons", "live", "playlist"];
+  for (var i = 0; i < tabs.length; i++) {
+    var t = tabs[i];
+    document.getElementById("tab-" + t).setAttribute("aria-selected", t === name ? "true" : "false");
+    document.getElementById("panel-" + t).hidden = t !== name;
+  }
+  announce(name === "cartoons" ? "Cartoons tab" : name === "live" ? "24-7 live tab" : "Playlist tab");
 }
 function openPlayer(title) {
   document.getElementById("playertitle").textContent = title;
@@ -134,7 +155,7 @@ function openLive(i) {
   var item = LIVESTREAMS[i];
   document.getElementById("stage").innerHTML =
     '<iframe src="https://www.youtube-nocookie.com/embed/' + item.id + '?autoplay=1&rel=0&playsinline=1" ' +
-    'allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen title="' + item.title + '"></iframe>';
+    'allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen title="' + escHtml(item.title) + '"></iframe>';
   openPlayer(item.title);
 }
 function closePlayer() {
@@ -142,9 +163,130 @@ function closePlayer() {
   document.getElementById("player").classList.remove("open");
   announce("Player closed.");
 }
+function setPlaylistStatus(msg) {
+  document.getElementById("playliststatus").textContent = msg;
+}
+function clearPlaylistTimer() {
+  if (playlistTimer) { clearTimeout(playlistTimer); playlistTimer = null; }
+}
+function loadPlaylist() {
+  var url = document.getElementById("playlisturl").value.trim();
+  if (!url) {
+    setPlaylistStatus("Type or paste a playlist link first.");
+    announce("Type or paste a playlist link first.");
+    return;
+  }
+  try { localStorage.setItem(PLAYLIST_KEY, url); } catch (e) {}
+  setPlaylistStatus("Loading playlist...");
+  announce("Loading playlist.");
+  clearPlaylistTimer();
+  playlistTimer = setTimeout(function () {
+    setPlaylistStatus("Still loading. If nothing happens, check the link and try again.");
+    announce("Still loading. Check the link and try again.");
+  }, 25000);
+  if (window.LynxosPlayer && typeof LynxosPlayer.fetchPlaylist === "function") {
+    LynxosPlayer.fetchPlaylist(url);
+  } else {
+    fetch(url).then(function (r) {
+      if (!r.ok) { throw new Error("bad response"); }
+      return r.text();
+    }).then(function (t) { onPlaylistLoadedText(t); }, function () { onPlaylistError("Could not load that link."); });
+  }
+}
+function onPlaylistLoaded(b64) {
+  clearPlaylistTimer();
+  try {
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) { bytes[i] = bin.charCodeAt(i); }
+    var text = new TextDecoder("utf-8").decode(bytes);
+    onPlaylistLoadedText(text);
+  } catch (e) {
+    onPlaylistError("Could not read the playlist.");
+  }
+}
+function onPlaylistError(msg) {
+  clearPlaylistTimer();
+  setPlaylistStatus("That did not work: " + msg);
+  announce("Playlist failed to load: " + msg);
+}
+function onPlaylistLoadedText(text) {
+  clearPlaylistTimer();
+  playlistChannels = parseM3U(text);
+  if (!playlistChannels.length) {
+    setPlaylistStatus("No channels found in that playlist.");
+    announce("No channels found in that playlist.");
+    document.getElementById("playlistsections").innerHTML = "";
+    return;
+  }
+  renderPlaylist();
+  setPlaylistStatus(playlistChannels.length + " channels loaded.");
+  announce(playlistChannels.length + " channels loaded, sorted into sections.");
+}
+function parseM3U(text) {
+  var lines = text.split(/\r?\n/);
+  var out = [];
+  var pending = null;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) { continue; }
+    if (line.indexOf("#EXTINF") === 0) {
+      var gm = line.match(/group-title="([^"]*)"/);
+      var comma = line.lastIndexOf(",");
+      var name = comma > -1 ? line.substring(comma + 1).trim() : "";
+      var group = gm ? gm[1].split(";")[0].trim() : "";
+      pending = { name: name || "Channel", group: group || "Channels", url: "" };
+    } else if (line.charAt(0) === "#") {
+      pending = null;
+    } else if (pending) {
+      pending.url = line;
+      out.push(pending);
+      pending = null;
+    }
+  }
+  return out;
+}
+function renderPlaylist() {
+  var groups = {};
+  var order = [];
+  var i, g, k;
+  for (i = 0; i < playlistChannels.length; i++) {
+    var ch = playlistChannels[i];
+    if (!groups[ch.group]) { groups[ch.group] = []; order.push(ch.group); }
+    groups[ch.group].push(i);
+  }
+  var html = "";
+  for (g = 0; g < order.length; g++) {
+    var name = order[g];
+    var idxs = groups[name];
+    html += '<h2 class="sectionhead">' + escHtml(name) + " (" + idxs.length + ")</h2>";
+    for (k = 0; k < idxs.length; k++) {
+      var c = playlistChannels[idxs[k]];
+      html += '<button class="showbtn" onclick="playPlaylistChannel(' + idxs[k] + ')" aria-label="Play ' + escHtml(c.name) + '">' +
+        escHtml(c.name) + "</button>";
+    }
+  }
+  document.getElementById("playlistsections").innerHTML = html;
+}
+function playPlaylistChannel(i) {
+  var ch = playlistChannels[i];
+  if (!ch) { return; }
+  if (window.LynxosPlayer && typeof LynxosPlayer.playStream === "function") {
+    announce("Opening " + ch.name + ".");
+    LynxosPlayer.playStream(ch.url, ch.name);
+  } else {
+    announce("Playing channels needs the installed app.");
+  }
+}
 document.addEventListener("keydown", function (e) {
   if (e.key === "Escape" || e.key === "Backspace") { closePlayer(); }
 });
+(function initPlaylist() {
+  try {
+    var saved = localStorage.getItem(PLAYLIST_KEY);
+    if (saved) { document.getElementById("playlisturl").value = saved; }
+  } catch (e) {}
+})();
 renderCartoons();
 renderLive();
 </script>
