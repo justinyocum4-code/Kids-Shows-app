@@ -25,9 +25,9 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     env:
-      APP_VERSION_NAME: ${{ inputs.version_name || '4.0' }}
-      APP_VERSION_CODE: ${{ inputs.version_code || '4' }}
-      APP_RELEASE_NOTES: ${{ inputs.release_notes || 'First release. The 24/7 Live tab has only real always-on live streams from official channels. Everything plays inside the app.' }}
+      APP_VERSION_NAME: ${{ inputs.version_name || '4.1' }}
+      APP_VERSION_CODE: ${{ inputs.version_code || '5' }}
+      APP_RELEASE_NOTES: ${{ inputs.release_notes || 'Fixed YouTube playback (Error 153) so videos play inside the app, and replaced the Peppa Pig and CoComelon streams with ones that allow embedding.' }}
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -137,6 +137,8 @@ jobs:
               super.onCreate(s);
               w = new WebView(this);
               WebSettings st = w.getSettings();
+              String ua = st.getUserAgentString();
+              if (ua != null) st.setUserAgentString(ua.replace("; wv", ""));
               st.setJavaScriptEnabled(true);
               st.setDomStorageEnabled(true);
               st.setLoadWithOverviewMode(true);
