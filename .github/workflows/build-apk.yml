@@ -154,7 +154,7 @@ jobs:
               public void fetchPlaylist(final String url) {
                 new Thread(new Runnable() {
                   @Override public void run() {
-                    final String js;
+                    String js;
                     try {
                       java.net.URL u = new java.net.URL(url);
                       java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
