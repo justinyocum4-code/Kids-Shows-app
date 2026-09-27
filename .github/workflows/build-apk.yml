@@ -25,9 +25,9 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     env:
-      APP_VERSION_NAME: ${{ inputs.version_name || '4.6' }}
-      APP_VERSION_CODE: ${{ inputs.version_code || '10' }}
-      APP_RELEASE_NOTES: "${{ inputs.release_notes || 'Two new 24/7 streams: BabyBus and Disney Jr. (The Lion Guard). All seven live streams verified working.' }}"
+      APP_VERSION_NAME: ${{ inputs.version_name || '4.7' }}
+      APP_VERSION_CODE: ${{ inputs.version_code || '11' }}
+      APP_RELEASE_NOTES: "${{ inputs.release_notes || 'New Playlist tab: paste your own m3u playlist link and the app sorts its channels into sections. Tap any channel to play it in the app.' }}"
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -96,9 +96,21 @@ jobs:
                   versionCode __APP_VERSION_CODE__
                   versionName '__APP_VERSION_NAME__'
               }
+              compileOptions {
+                  coreLibraryDesugaringEnabled true
+              }
+          }
+          dependencies {
+              implementation 'androidx.media3:media3-exoplayer:1.4.1'
+              implementation 'androidx.media3:media3-ui:1.4.1'
+              coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
           }
           EOF
           sed -i "s/__APP_VERSION_CODE__/$APP_VERSION_CODE/g; s/__APP_VERSION_NAME__/$APP_VERSION_NAME/g" app/build.gradle
+
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -118,6 +130,9 @@ jobs:
                           <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
                       </intent-filter>
                   </activity>
+                  <activity android:name="com.kidsshows.app.PlayerActivity"
+                      android:exported="false"
+                      android:configChanges="orientation|screenSize|keyboardHidden"/>
               </application>
           </manifest>
           EOF
@@ -128,11 +143,57 @@ jobs:
           import android.os.Build;
           import android.os.Bundle;
           import android.webkit.CookieManager;
+          import android.webkit.JavascriptInterface;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           public class MainActivity extends Activity {
             private WebView w;
+            public class PlayerBridge {
+              @JavascriptInterface
+              public void fetchPlaylist(final String url) {
+                new Thread(new Runnable() {
+                  @Override public void run() {
+                    final String js;
+                    try {
+                      java.net.URL u = new java.net.URL(url);
+                      java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
+                      c.setConnectTimeout(15000);
+                      c.setReadTimeout(30000);
+                      c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126.0.0.0 Mobile Safari/537.36");
+                      java.io.InputStream in = c.getInputStream();
+                      java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                      byte[] tmp = new byte[8192];
+                      int n;
+                      while ((n = in.read(tmp)) != -1) bos.write(tmp, 0, n);
+                      in.close();
+                      String b64 = android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP);
+                      js = "onPlaylistLoaded('" + b64 + "')";
+                    } catch (Exception e) {
+                      String msg = e.getMessage();
+                      if (msg == null) msg = "load failed";
+                      msg = msg.replace("'", "").replace("\n", " ");
+                      if (msg.length() > 120) msg = msg.substring(0, 120);
+                      js = "onPlaylistError('" + msg + "')";
+                    }
+                    w.post(new Runnable() {
+                      @Override public void run() { w.evaluateJavascript(js, null); }
+                    });
+                  }
+                }).start();
+              }
+              @JavascriptInterface
+              public void playStream(final String url, final String title) {
+                w.post(new Runnable() {
+                  @Override public void run() {
+                    android.content.Intent i = new android.content.Intent(MainActivity.this, PlayerActivity.class);
+                    i.putExtra("url", url);
+                    i.putExtra("title", title);
+                    MainActivity.this.startActivity(i);
+                  }
+                });
+              }
+            }
             @Override protected void onCreate(Bundle s) {
               super.onCreate(s);
               w = new WebView(this);
@@ -149,6 +210,7 @@ jobs:
               CookieManager cm = CookieManager.getInstance();
               cm.setAcceptCookie(true);
               if (Build.VERSION.SDK_INT >= 21) cm.setAcceptThirdPartyCookies(w, true);
+              w.addJavascriptInterface(new PlayerBridge(), "LynxosPlayer");
               w.setWebViewClient(new WebViewClient());
               setContentView(w);
               try {
@@ -166,6 +228,46 @@ jobs:
             @Override public void onBackPressed() {
               if (w != null && w.canGoBack()) { w.goBack(); return; }
               super.onBackPressed();
+            }
+          }
+          EOF
+
+          cat > app/src/main/java/com/kidsshows/app/PlayerActivity.java <<'EOF'
+          package com.kidsshows.app;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.view.ViewGroup;
+          import android.widget.FrameLayout;
+          import androidx.media3.common.MediaItem;
+          import androidx.media3.exoplayer.ExoPlayer;
+          import androidx.media3.ui.PlayerView;
+          public class PlayerActivity extends Activity {
+            private ExoPlayer player;
+            @Override protected void onCreate(Bundle s) {
+              super.onCreate(s);
+              FrameLayout root = new FrameLayout(this);
+              root.setBackgroundColor(0xFF000000);
+              PlayerView pv = new PlayerView(this);
+              pv.setLayoutParams(new FrameLayout.LayoutParams(
+                  ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+              pv.setShowNextButton(false);
+              pv.setShowPreviousButton(false);
+              root.addView(pv);
+              setContentView(root);
+              String url = getIntent().getStringExtra("url");
+              String title = getIntent().getStringExtra("title");
+              if (title != null) setTitle(title);
+              player = new ExoPlayer.Builder(this).build();
+              pv.setPlayer(player);
+              if (url != null) {
+                player.setMediaItem(MediaItem.fromUri(url));
+                player.prepare();
+                player.play();
+              }
+            }
+            @Override protected void onStop() {
+              super.onStop();
+              if (player != null) { player.release(); player = null; }
             }
           }
           EOF
